@@ -330,27 +330,25 @@
             return Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 6);
         }
 
-        // Firebase & Cloud Setup
+        // Firebase & Cloud Setup (RULE 1 & RULE 3 compliance)
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'twitch-donation-system-default';
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
         let db = null;
         let auth = null;
         let userId = null;
 
-        // Handle Unique Overlay Token Generation safely inside blob iframes
+        // Handle Unique Overlay Token Generation safely inside sandboxed/blob iframes
         const urlParams = new URLSearchParams(window.location.search);
         const isObsMode = urlParams.get('mode') === 'obs';
         let overlayToken = urlParams.get('token');
 
         if (!overlayToken) {
             overlayToken = generateToken();
-            // Safely update URL search param if not restricted by blob iframe security
             try {
                 const newUrl = new URL(window.location.href);
                 newUrl.searchParams.set('token', overlayToken);
                 window.history.replaceState({}, '', newUrl);
             } catch (e) {
-                // Blob iframe origin restriction fallback - token stored in memory state
                 console.log("Running in sandboxed iframe; using in-memory token state.");
             }
         }
@@ -371,6 +369,7 @@
                 auth = getAuth(app);
                 db = getFirestore(app);
 
+                // RULE 3: Authenticate first before any Firestore operations
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                     await signInWithCustomToken(auth, __initial_auth_token);
                 } else {
@@ -388,11 +387,12 @@
 
                 // If in OBS mode, hide dashboard UI and show only full-screen transparent alert overlay
                 if (isObsMode) {
-                    document.querySelector('header').style.display = 'none';
-                    document.querySelector('main').style.display = 'none';
+                    const headerEl = document.querySelector('header');
+                    const mainEl = document.querySelector('main');
+                    if (headerEl) headerEl.style.display = 'none';
+                    if (mainEl) mainEl.style.display = 'none';
                     document.body.className = 'bg-transparent text-gray-100 min-h-screen flex items-center justify-center p-0 m-0 overflow-hidden';
                     
-                    // Create standalone OBS container
                     const obsContainer = document.createElement('div');
                     obsContainer.className = 'relative w-screen h-screen flex items-center justify-center';
                     obsContainer.appendChild(alertBox);
@@ -400,7 +400,7 @@
                     alertBox.style.position = 'absolute';
                 }
 
-                // Listen to public donations in real-time (scoped by unique token or global app)
+                // RULE 1: Use exact path format for public collection
                 const donationsRef = collection(db, 'artifacts', appId, 'public', 'data', `donations_${overlayToken}`);
                 onSnapshot(donationsRef, (snapshot) => {
                     snapshot.docChanges().forEach((change) => {
@@ -436,14 +436,12 @@
                 newUrl.searchParams.set('token', overlayToken);
                 window.history.replaceState({}, '', newUrl);
             } catch (e) {
-                // Ignore blob security restrictions on history replaceState
+                // Ignore blob security restrictions
             }
             
             const currentBase = window.location.href.split('?')[0];
             const uniqueObsLink = `${currentBase}?mode=obs&token=${overlayToken}`;
             obsUrlInput.value = uniqueObsLink;
-            
-            // Re-initialize listener for new token
             initCloudSync();
         });
 
@@ -484,16 +482,15 @@
                 method: selectedPaymentMethod,
                 cashtag: rawCashtag,
                 timestamp: new Date().toLocaleTimeString(),
-                createdAt: Date.now()
+                createdAt: Date.now(),
+                processed: false
             };
 
             if (selectedPaymentMethod === 'cashapp') {
-                // Show simulated Cash App QR Payment interface
                 qrCashtagLabel.textContent = `$${rawCashtag}`;
                 modalPayAmount.textContent = `$${pendingDonationData.amount.toFixed(2)}`;
                 cashappModal.classList.remove('hidden');
             } else {
-                // Direct Stripe payment flow simulation -> Save to Firestore cloud collection
                 await publishDonationToCloud(pendingDonationData);
                 donationMsgInput.value = '';
             }
@@ -510,7 +507,7 @@
         });
 
         async function publishDonationToCloud(data) {
-            if (!db) {
+            if (!db || !auth || !auth.currentUser) {
                 // Fallback local queue if offline
                 enqueueAlert(data);
                 return;
@@ -553,7 +550,6 @@
             const current = alertQueue.shift();
             updateQueueCount();
 
-            // Setup Alert Box Content
             alertDonor.textContent = current.donor;
             alertAmount.textContent = `$${parseFloat(current.amount).toFixed(2)}`;
             alertMessage.textContent = `"${current.message}"`;
@@ -573,10 +569,8 @@
             if (obsIdleText) obsIdleText.style.display = 'none';
             alertBox.classList.add('show');
 
-            // Play Audio Chime
             playChime(current.method);
 
-            // Trigger TTS if enabled
             if (ttsToggle.value === 'enabled' && 'speechSynthesis' in window) {
                 setTimeout(() => {
                     const speechText = `${current.donor} donated $${current.amount} dollars. ${current.message}`;
@@ -587,10 +581,8 @@
                 }, 600);
             }
 
-            // Append to History
             addHistoryRow(current);
 
-            // Display duration: 6 seconds
             setTimeout(() => {
                 alertBox.classList.remove('show');
                 setTimeout(() => {
@@ -603,7 +595,7 @@
             }, 6000);
         }
 
-        // Web Audio API custom synthesizer chime
+        // Web Audio API synthesizer chime
         function playChime(method) {
             try {
                 const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -623,12 +615,10 @@
                 };
 
                 if (method === 'cashapp') {
-                    // Upbeat Cash App style sound motif
-                    playNote(587.33, 0.0, 0.2); // D5
-                    playNote(880.00, 0.1, 0.3); // A5
-                    playNote(1174.66, 0.25, 0.5); // D6
+                    playNote(587.33, 0.0, 0.2);
+                    playNote(880.00, 0.1, 0.3);
+                    playNote(1174.66, 0.25, 0.5);
                 } else {
-                    // Standard chime
                     playNote(523.25, 0.0, 0.25);
                     playNote(659.25, 0.12, 0.25);
                     playNote(783.99, 0.24, 0.4);
