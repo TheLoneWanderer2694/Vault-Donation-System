@@ -53,7 +53,8 @@
 </head>
 <body class="bg-gray-950 text-gray-100 min-h-screen flex flex-col">
 
-    <header class="bg-gray-900 border-b border-gray-800 px-6 py-4 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-50">
+    <!-- STREAM_CHUNK:Rendering dashboard header... -->
+    <header id="app-header" class="bg-gray-900 border-b border-gray-800 px-6 py-4 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-50">
         <div class="flex items-center space-x-3">
             <div class="bg-emerald-500 p-2.5 rounded-xl text-black font-black shadow-lg shadow-emerald-500/20">
                 <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
@@ -76,7 +77,8 @@
         </div>
     </header>
 
-    <main class="flex-1 max-w-7xl w-full mx-auto p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- STREAM_CHUNK:Rendering main application container... -->
+    <main id="app-main" class="flex-1 max-w-7xl w-full mx-auto p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
 
         <!-- Left Column: Streamer Config & Cash App Tipper UI -->
         <div class="lg:col-span-1 space-y-6">
@@ -202,7 +204,7 @@
                     <!-- OBS Grid Pattern -->
                     <div class="absolute inset-0 opacity-10" style="background-image: radial-gradient(#9ca3af 1px, transparent 1px); background-size: 16px 16px;"></div>
 
-                    <!-- Live Dynamic Alert Box -->
+                    <!-- Live Dynamic Alert Box (Shared by both preview and OBS mode) -->
                     <div id="active-alert-box" class="alert-box cashapp-glow absolute bg-gray-900/95 border-l-8 border-emerald-500 rounded-2xl p-6 max-w-md w-full shadow-2xl backdrop-blur-md flex flex-col space-y-3 z-10">
                         <div class="flex items-center justify-between border-b border-gray-800 pb-3">
                             <div>
@@ -282,6 +284,7 @@
 
     </main>
 
+    <!-- STREAM_CHUNK:Initializing application script logic... -->
     <script>
         // DOM Handles
         const donationForm = document.getElementById('donation-form');
@@ -355,6 +358,21 @@
 
         // Initialize Firebase & Realtime Listener
         async function initCloudSync() {
+            // If in OBS mode, instantly transform the page into a clean, transparent full-screen alert overlay
+            if (isObsMode) {
+                const headerEl = document.getElementById('app-header');
+                const mainEl = document.getElementById('app-main');
+                if (headerEl) headerEl.style.display = 'none';
+                if (mainEl) mainEl.style.display = 'none';
+                document.body.className = 'bg-transparent text-gray-100 min-h-screen flex items-center justify-center p-0 m-0 overflow-hidden';
+                
+                const obsContainer = document.createElement('div');
+                obsContainer.className = 'relative w-screen h-screen flex items-center justify-center';
+                obsContainer.appendChild(alertBox);
+                document.body.appendChild(obsContainer);
+                alertBox.style.position = 'absolute';
+            }
+
             if (!firebaseConfig) {
                 connectionIndicator.className = 'w-2.5 h-2.5 rounded-full bg-yellow-500';
                 connectionStatus.textContent = 'Local Standalone Mode';
@@ -384,21 +402,6 @@
                 const currentBase = window.location.href.split('?')[0];
                 const uniqueObsLink = `${currentBase}?mode=obs&token=${overlayToken}`;
                 obsUrlInput.value = uniqueObsLink;
-
-                // If in OBS mode, hide dashboard UI and show only full-screen transparent alert overlay
-                if (isObsMode) {
-                    const headerEl = document.querySelector('header');
-                    const mainEl = document.querySelector('main');
-                    if (headerEl) headerEl.style.display = 'none';
-                    if (mainEl) mainEl.style.display = 'none';
-                    document.body.className = 'bg-transparent text-gray-100 min-h-screen flex items-center justify-center p-0 m-0 overflow-hidden';
-                    
-                    const obsContainer = document.createElement('div');
-                    obsContainer.className = 'relative w-screen h-screen flex items-center justify-center';
-                    obsContainer.appendChild(alertBox);
-                    document.body.appendChild(obsContainer);
-                    alertBox.style.position = 'absolute';
-                }
 
                 // RULE 1: Use exact path format for public collection
                 const donationsRef = collection(db, 'artifacts', appId, 'public', 'data', `donations_${overlayToken}`);
@@ -539,7 +542,7 @@
         }
 
         function updateQueueCount() {
-            queueCountEl.textContent = alertQueue.length;
+            if (queueCountEl) queueCountEl.textContent = alertQueue.length;
         }
 
         // Sequential Queue Processor
